@@ -1,0 +1,6 @@
+---
+title: "p8105_hw6_xl3495"
+author: "Xueting Li"
+date: "2024-12-01"
+output: github_document
+---
