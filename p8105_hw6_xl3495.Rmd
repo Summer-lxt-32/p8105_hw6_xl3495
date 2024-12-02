@@ -4,3 +4,105 @@ author: "Xueting Li"
 date: "2024-12-01"
 output: github_document
 ---
+
+```{r}
+library(tidyverse)
+library(modelr)
+library(broom)
+set.seed(123)
+```
+
+
+
+# Problem 1
+
+```{r}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
+```{r}
+n_bootstrap = 5000
+
+boot_models = weather_df |>
+  select(tmax, tmin) |>
+  bootstrap(n = n_bootstrap) |>
+    mutate(
+    model = map(strap, ~ lm(tmax ~ tmin, data = .))
+  )
+
+boot_r_squared = boot_models |>
+  mutate(glance = map(model, glance)) |>
+  unnest(glance) |>
+  select(r.squared) |>
+   mutate(metric = "R-squared")
+
+
+boot_coefficients = boot_models |>
+  mutate(
+    coefficients = map(model, coefficients),
+    product = map_dbl(coefficients, ~ .[1] * .[2]),
+    log_beta = log(product)
+  ) |>
+  select(log_beta) |>
+  mutate(metric = "log(β0 * β1)")
+```
+
+```{r}
+combined_data = bind_rows(
+  boot_r_squared |> rename(value = r.squared),
+  boot_coefficients |> rename(value = log_beta)
+)
+
+ggplot(combined_data, aes(x = value, fill = metric)) +
+  geom_histogram(bins = 30, alpha = 0.6) +
+  facet_wrap(~ metric, scales = "free_x") +  # Facet by 'metric' variable
+  theme_minimal() +
+  scale_fill_manual(values = c("R-squared" = "lightblue", "log(β0 * β1)" = "lightgreen")) +
+  labs(
+    title = "Distribution of R-squared and log(β0 * β1) from Bootstrap Samples",
+    x = "Value", y = "Frequency"
+  )
+```
+From the plot, the distributions of the two estimates follow an approximate normal distribution. For $log(\beta_0 * \beta_1)$, it frequently distributes between (2, 2.025). For, $r^2$,it frequently distributes between (0.905, 0.915).
+
+```{r}
+r_squared_ci = quantile(boot_r_squared$r.squared, probs = c(0.025, 0.975))
+
+log_beta_ci = quantile(boot_coefficients$log_beta, probs = c(0.025, 0.975))
+
+ci_df = data.frame(
+  Metric = c("R-squared", "log(β0 * β1)"),
+  Lower_bound = c(r_squared_ci[1], log_beta_ci[1]),
+  Upper_bound = c(r_squared_ci[2], log_beta_ci[2])
+)
+
+print(ci_df)
+```
+
+
+# Problem 2
+
+```{r}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
