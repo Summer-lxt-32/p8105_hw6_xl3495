@@ -35,7 +35,7 @@ n_bootstrap = 5000
 
 boot_models = weather_df |>
   select(tmax, tmin) |>
-  bootstrap(n = n_bootstrap) |>
+  modelr::bootstrap(n = n_bootstrap) |>
     mutate(
     model = map(strap, ~ lm(tmax ~ tmin, data = .))
   )
@@ -182,6 +182,138 @@ ggplot(city_or_results, aes(x = reorder(city, odds_ratio),
 According to the plot,  if the point is above 1, it suggests that male victims have a higher likelihood of having their homicide solved compared to female victims in that city, and if the CI includes 1, the effect is not statistically significant, meaning we cannot conclude whether there's a difference in the likelihood of solving homicides for male vs. female victims in that city. For example, male victims in Albuquerque have a higher likelihood of having their homicide solved compared to female victims. There are still a number of cities we cannot conclude whether there's a difference in the likelihood of solving homicides for male vs. female victims.
 
 # Problem 3
+
+```{r}
+bw_data = read_csv("datasets/birthweight.csv") |>
+  mutate(
+    babysex = factor(babysex, levels = c(1, 2), labels = c("Male", "Female")),
+    frace = factor(frace, levels = c(1, 2, 3, 4, 8, 9),
+                   labels = c("White", "Black", "Asian", "Puerto Rican", "Other", "Unknown")),
+    mrace = factor(mrace, levels = c(1, 2, 3, 4, 8),
+                   labels = c("White", "Black", "Asian", "Puerto Rican", "Other")),
+    malform = factor(malform, levels = c(0, 1), labels = c("Absent", "Present"))
+  ) |>
+  na.omit()
+
+summary(bw_data)
+```
+## Model1: delwt + momage + ppbmi
+
+```{r}
+model1 = lm(bwt ~ delwt + momage + ppbmi, data = bw_data)
+summary(model1)
+model1 |>
+  broom::tidy()
+```
+
+```{r}
+bw_data |>
+  add_predictions(model1) |>
+  add_residuals(model1) |>
+  ggplot(aes(x = pred, y = resid)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm", color = "blue") +
+  labs(x = "Fitted Values", y = "Residuals", 
+       title = "Residuals vs Fitted Values for Model 1")
+```
+
+The modeling process involves building a linear regression model to predict birthweight (bwt) based on several predictor variables. In this case, I am using the following variables:
+
+`delwt`: Mother's weight at delivery (in pounds)  
+`momage`: Mother's age at delivery (in years)  
+`ppbmi`: Mother's pre-pregnancy BMI  
+
+This model aims to predict the birthweight (bwt) using these predictors, based on a linear relationship. After summarizing the model with summary() and broom::tidy(), I used add_predictions() and add_residuals() to compute predicted values and residuals.
+
+## Model2: blength + gaweeks
+
+```{r}
+model2 = lm(bwt ~ blength + gaweeks, data = bw_data)
+summary(model2)
+```
+
+```{r}
+bw_data |>
+  add_predictions(model2) |>
+  add_residuals(model2) |>
+  ggplot(aes(x = pred, y = resid)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm", color = "blue") +
+  labs(x = "Fitted Values", y = "Residuals", 
+       title = "Residuals vs Fitted Values for Model 2")
+```
+
+## Model3: bhead * blength * babysex
+
+```{r}
+model3 = lm(bwt ~ bhead * blength * babysex, data = bw_data)
+summary(model3)
+```
+
+```{r}
+bw_data |>
+  add_predictions(model3) |>
+  add_residuals(model3) |>
+  ggplot(aes(x = pred, y = resid)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm", color = "blue") +
+  labs(x = "Fitted Values", y = "Residuals", 
+       title = "Residuals vs Fitted Values for Model 3")
+```
+
+## Cross Validation
+
+```{r}
+cv_df = crossv_mc(bw_data, n = 100, test = 0.2) |>
+  mutate(
+    model1  = map(train, \(df) lm(bwt ~ delwt + momage + ppbmi, data = bw_data)),
+    model2  = map(train, \(df) lm(bwt ~ blength + gaweeks, data = bw_data)),
+    model3 = map(train, \(df) lm(bwt ~ bhead * blength * babysex, data = bw_data))
+  ) |>
+   mutate(
+    rmse_model1 = map2_dbl(model1, test, ~rmse(model = .x, data = .y)),
+    rmse_model2 = map2_dbl(model2, test, ~rmse(model = .x, data = .y)),
+    rmse_model3 = map2_dbl(model3, test, ~rmse(model = .x, data = .y))
+  )
+
+cv_df |> 
+  summarise(model1_mean_error = mean(rmse_model1),
+            model2_mean_error = mean(rmse_model2),
+            model3_mean_error = mean(rmse_model3)) |>
+  knitr::kable(digits = 3)
+```
+
+
+```{r}
+cv_long = cv_df |>
+  pivot_longer(cols = starts_with("rmse_model"), 
+               names_to = "model", 
+               values_to = "rmse")
+
+ggplot(cv_long, aes(x = model, y = rmse, fill = model)) +
+  geom_violin(trim = FALSE) + 
+  labs(
+    title = "Cross Validation: RMSE Distribution",
+    x = "Model",
+    y = "RMSE"
+  ) +
+  scale_fill_brewer(palette = "Set3") + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+My model shows poorest performance in predicting birthweight with the highest mean squared error, but model 3 has a good performance among the three with lowest mse.
+
+
+
+
+
+
+
+
+
+
 
 
 
