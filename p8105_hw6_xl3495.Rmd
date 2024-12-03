@@ -9,6 +9,7 @@ output: github_document
 library(tidyverse)
 library(modelr)
 library(broom)
+library(purrr)
 set.seed(123)
 ```
 
@@ -92,16 +93,95 @@ print(ci_df)
 # Problem 2
 
 ```{r}
+homicide_data = read_csv("datasets/homicide-data.csv") |>
+  mutate(
+    city_state = paste(city, state, sep = ", "),
+    homicide_solved = if_else(disposition == "Closed by arrest", 1, 0),
+    victim_age = as.numeric(victim_age)
+    ) |>
+  filter(
+    !city_state %in% c("Dallas, TX", "Phoenix, AZ", "Kansas City, MO", "Tulsa, AL"),
+    victim_race %in% c("White", "Black"),
+    !is.na(victim_age)
+    )
+```
+```{r}
+baltimore_data = homicide_data |>
+  filter(city_state == "Baltimore, MD")
 
+log_reg_model = glm(homicide_solved ~ victim_age + victim_sex + victim_race, 
+                     data = baltimore_data, 
+                     family = binomial)
+
+model_summary = tidy(log_reg_model, conf.int = TRUE)
+
+# Extract the estimate and confidence interval for victim_sex variable
+sex_results = model_summary |>
+  filter(term == "victim_sexMale")
+
+odds_ratio = exp(sex_results$estimate)
+lower_ci = exp(sex_results$conf.low)
+upper_ci = exp(sex_results$conf.high)
+
+result_table = tibble(
+  Variable = "Male vs Female Victims",
+  Odds_Ratio = odds_ratio,
+  Lower_CI = lower_ci,
+  Upper_CI = upper_ci
+)
+
+print(result_table)
 ```
 
 
+```{r}
+city_log_reg = homicide_data |>
+  filter(
+    victim_sex %in% c("Male", "Female"), victim_race %in% c("White", "Black")
+    ) |>
+  group_by(city) |>
+  nest() |>
+  mutate(
+    model = map(data, ~ glm(homicide_solved ~ victim_age + victim_sex + victim_race, 
+                            data = ., family = binomial)),
+    tidy_results = map(model, tidy, conf.int = TRUE)
+  )
 
 
+city_or_results = city_log_reg |>
+  unnest(tidy_results) |>
+  filter(term == "victim_sexMale") |>
+  mutate(
+    odds_ratio = exp(estimate),
+    lower_ci = exp(conf.low),
+    upper_ci = exp(conf.high)
+  ) |>
+  select(city, odds_ratio, lower_ci, upper_ci) |>
+  arrange(desc(odds_ratio))
+
+head(city_or_results)
+```
 
 
+```{r}
+ggplot(city_or_results, aes(x = reorder(city, odds_ratio), 
+                            y = odds_ratio, 
+                            ymin = lower_ci, 
+                            ymax = upper_ci)) +
+  geom_point() + 
+  geom_errorbar(width = 0.3) +
+  coord_flip() +
+  labs(
+    title = "Adjusted Odds Ratio for Solving Homicides: Male vs Female Victims by City",
+    x = "City",
+    y = "Adjusted Odds Ratio (Male vs Female)"
+  ) +
+  theme_minimal()
+```
 
+According to the plot,  if the point is above 1, it suggests that male victims have a higher likelihood of having their homicide solved compared to female victims in that city, and if the CI includes 1, the effect is not statistically significant, meaning we cannot conclude whether there's a difference in the likelihood of solving homicides for male vs. female victims in that city. For example, male victims in Albuquerque have a higher likelihood of having their homicide solved compared to female victims. There are still a number of cities we cannot conclude whether there's a difference in the likelihood of solving homicides for male vs. female victims.
 
+# Problem 3
 
 
 
